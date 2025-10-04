@@ -15,8 +15,8 @@ import { requireAuth } from "../middleware/auth.js";
 const router = Router();
 
 router.get("/", listBatches);
-router.post("/", requireAuth, validate(createBatchSchema), createBatch);
-router.put("/:id", requireAuth, validate(updateBatchSchema), updateBatch);
-router.delete("/:id", requireAuth, validate(updateBatchSchema), deleteBatch);
+router.post("/", validate(createBatchSchema), createBatch);
+router.put("/:id", validate(updateBatchSchema), updateBatch);
+router.delete("/:id", validate(updateBatchSchema), deleteBatch);
 
 export default router;

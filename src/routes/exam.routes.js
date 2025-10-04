@@ -7,6 +7,6 @@ import { requireAuth } from "../middleware/auth.js";
 const r = Router();
 
 r.get("/", validate(byRangeQuery), ExamController.list);
-r.post("/", requireAuth, validate(createExamSchema), ExamController.create);
+r.post("/", validate(createExamSchema), ExamController.create);
 
 export default r;
