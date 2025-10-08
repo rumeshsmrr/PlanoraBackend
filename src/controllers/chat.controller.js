@@ -1,11 +1,9 @@
 // src/controllers/chat.controller.js
-import { pool } from "../db.js";
-import fetch from "node-fetch";
-// 💡 Import the necessary service functions
 import {
+  queryAllSchedules,
   validateMessage,
-  querySchedules,
 } from "../services/chatbot.service.js";
+import fetch from "node-fetch";
 
 /**
  * POST /api/chatbot
@@ -18,10 +16,7 @@ export async function handleChat(req, res) {
       return res.status(400).json({ error: "Message is required." });
     }
 
-    const messageLower = message.toLowerCase();
-
     // --- 1. Intent Check & Message Parsing ---
-    // Detect and block creation intent
     const creationKeywords = [
       "create",
       "schedule",
@@ -30,49 +25,35 @@ export async function handleChat(req, res) {
       "make",
       "set up",
     ];
-    const isCreationIntent = creationKeywords.some((keyword) =>
-      messageLower.includes(keyword)
-    );
-
-    if (isCreationIntent) {
-      return res.json({ reply: "Sorry, can't create exam via chatbot" });
+    if (
+      creationKeywords.some((keyword) =>
+        message.toLowerCase().includes(keyword)
+      )
+    ) {
+      return res.json({
+        reply:
+          "Sorry, I cannot create or schedule events. I can only check existing schedules.",
+      });
     }
 
-    // Parse the message into structured search criteria
+    // Extract the user's intended filters
     const parsedMessage = validateMessage(message);
 
-    // --- 2. Database Lookup using Service Layer ---
-    let schedules = [];
-
-    // Check if the message contains ANY valid filter (date, time, venue, batch, or generic upcoming)
-    if (
-      parsedMessage.dateStr ||
-      parsedMessage.timeStart ||
-      parsedMessage.venueName ||
-      parsedMessage.batchName ||
-      parsedMessage.wantsUpcoming
-    ) {
-      // Use the advanced, structured query from the service for accurate time/venue filtering
-      schedules = await querySchedules(parsedMessage);
-    } else {
-      // Fallback for simple, unstructured title search (e.g., "AI Workshop")
-      const [results] = await pool.query(
-        // Use the original simple LIKE query for unstructured text
-        `SELECT title, venue_id, start_utc, end_utc FROM events
-             WHERE LOWER(title) LIKE LOWER(?)
-             UNION
-             SELECT title, venue_id, start_utc, end_utc FROM exams
-             WHERE LOWER(title) LIKE LOWER(?)
-             LIMIT 5`,
-        [`%${message}%`, `%${message}%`]
-      );
-      schedules = results;
-    }
+    // --- 2. Database Lookup (Fetch All relevant schedules) ---
+    // This fetches a large, time-zone corrected list.
+    const allSchedules = await queryAllSchedules();
 
     // Format the context string for the LLM
-    const context = JSON.stringify({ schedules }, null, 2);
+    const context = JSON.stringify(
+      {
+        request: parsedMessage, // The AI uses this as the filter criteria
+        schedules: allSchedules, // The AI filters this large, time-corrected list
+      },
+      null,
+      2
+    );
 
-    // --- 3. Send query to Gemini API ---
+    // --- 3. Build and Log Gemini Request ---
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.error("GEMINI_API_KEY is not set.");
@@ -83,31 +64,44 @@ export async function handleChat(req, res) {
     const GEMINI_MODEL = "gemini-2.5-flash";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                // Prompt update: instructs the LLM on how to interpret results for availability
-                text: `You are a helpful assistant that answers queries about university schedules.
-If the user's message is a question about **availability** (e.g., 'Is F403 free...'), and the 'schedules' context is **empty**, reply 'Yes, it is free.' If the context contains results, reply with a polite summary of the conflict(s).
-If the query is about **upcoming events**, summarize the events/exams listed in the context.
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              // CRITICAL PROMPT: Instruct the AI on how to filter the large context
+              text: `You are an expert university schedule assistant. Your task is to check availability and summarize events based on the user's message.
+The 'schedules' context below contains ALL relevant events and exams. The times in 'local_start' and 'local_end' are **ALREADY converted to IST (Local Time)**.
+
+Instructions for filtering and responding:
+1.  **FILTER:** Use the 'request' fields (dateStr, timeStart, timeEnd, venueName, batchName) to filter the 'schedules'. 
+2.  **AVAILABILITY:** If the user asks for availability (e.g., 'is F403 free...') and you find NO conflicts based on the filters, reply: 'Yes, it is free.'
+3.  **CONFLICTS/SUMMARY:** If you find conflicts or the user asks for a summary, provide a polite, concise list of the conflicting events/exams. Always use the local time from the 'local_start'/'local_end' fields.
+
 User message: ${message}
-Database context:
+Database context (All Relevant Schedules: ${allSchedules.length}):
 ${context}
 
 Respond briefly and politely.`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,
+            },
+          ],
         },
-      }),
+      ],
+      generationConfig: {
+        temperature: 0.2,
+      },
+    };
+
+    // 📢 Log the entire request body to the console for inspection!
+    console.log("--- DEBUG: AI Request Payload ---");
+    console.log(JSON.stringify(requestBody, null, 2));
+    console.log("----------------------------------");
+
+    // --- 4. Send query to Gemini API ---
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
     });
 
     const data = await response.json();
