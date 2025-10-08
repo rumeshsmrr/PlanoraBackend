@@ -10,6 +10,7 @@ import scheduleRoutes from "./schedule.routes.js";
 import audit from "./audit.routes.js";
 import buildingRoutes from "./building.routes.js";
 import studentRoutes from "./student.routes.js";
+import chatbotRoutes from "./chatbot.routes.js";
 
 const api = Router();
 
@@ -23,6 +24,7 @@ api.use("/schedules", scheduleRoutes);
 api.use("/audit", audit);
 api.use("/buildings", buildingRoutes);
 api.use("/students", studentRoutes);
+api.use("/chatbot", chatbotRoutes);
 
 // sample protected
 api.get("/me", requireAuth, (req, res) =>
