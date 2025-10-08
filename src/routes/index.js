@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/auth.js";
 import scheduleRoutes from "./schedule.routes.js";
 import audit from "./audit.routes.js";
 import buildingRoutes from "./building.routes.js";
+import studentRoutes from "./student.routes.js";
 
 const api = Router();
 
@@ -21,6 +22,8 @@ api.use("/batches", batches);
 api.use("/schedules", scheduleRoutes);
 api.use("/audit", audit);
 api.use("/buildings", buildingRoutes);
+api.use("/students", studentRoutes);
+
 // sample protected
 api.get("/me", requireAuth, (req, res) =>
   res.json({ ok: true, user: req.user })

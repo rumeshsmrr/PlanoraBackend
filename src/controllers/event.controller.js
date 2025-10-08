@@ -1,13 +1,16 @@
+// 📂 src/controllers/event.controller.js
 import { pool } from "../db.js";
 import { createItem, listItems } from "../services/schedule.service.js";
 import { logAudit } from "../services/audit.service.js";
 
 export const EventController = {
+  // ✅ List all events
   list: async (req, res) => {
     const rows = await listItems("events", req.query);
     res.json(rows);
   },
 
+  // ✅ Create new event (with conflict detection + audit)
   create: async (req, res) => {
     const result = await createItem(
       "events",
@@ -17,11 +20,12 @@ export const EventController = {
     );
     if (!result?.id) return; // blocked due to conflict
 
+    // fetch inserted event + joins
     const [[row]] = await pool.query(
       `SELECT e.id, e.title, e.start_utc, e.end_utc,
               d.name AS departmentName,
               b.label AS batchName,
-              v.name AS venueName
+              v.name AS venueName, v.capacity
        FROM events e
        LEFT JOIN departments d ON e.department_id = d.id
        LEFT JOIN batches b ON e.batch_id = b.id
@@ -30,7 +34,7 @@ export const EventController = {
       [result.id]
     );
 
-    // 🔥 log to audit table
+    // log creation
     await logAudit({
       title: `Created event "${row.title}"`,
       type: "create",
@@ -39,15 +43,34 @@ export const EventController = {
       refType: "event",
     });
 
+    // optional: if this is a campus event, calculate total affected students (for analytics)
+    let affectedStudents = 0;
+    if (row.batchName?.toLowerCase() === "campus") {
+      const [[{ count }]] = await pool.query(
+        `SELECT COUNT(*) AS count FROM stundent`
+      );
+      affectedStudents = count;
+    } else {
+      const [[{ count }]] = await pool.query(
+        `SELECT COUNT(*) AS count FROM stundent WHERE batch_id = ?`,
+        [req.valid.body.batchId]
+      );
+      affectedStudents = count;
+    }
+
     res.status(201).json({
+      message: "Event created successfully",
       event: row,
-      conflicts: { venue: result.vconflicts, batch: result.bconflicts },
+      stats: { affectedStudents },
+      conflicts: {
+        venue: result.vconflicts,
+        batch: result.bconflicts,
+      },
     });
   },
 
-  // ✅ prepare for later
+  // ✅ Update event (future use)
   update: async (req, res) => {
-    // ... update logic
     await logAudit({
       title: `Updated event "${req.body.title}"`,
       type: "update",
@@ -55,10 +78,11 @@ export const EventController = {
       refId: req.valid.params.id,
       refType: "event",
     });
+    res.json({ message: "Event update logged" });
   },
 
+  // ✅ Delete event (future use)
   delete: async (req, res) => {
-    // ... delete logic
     await logAudit({
       title: `Deleted event ID ${req.valid.params.id}`,
       type: "delete",
@@ -66,5 +90,6 @@ export const EventController = {
       refId: req.valid.params.id,
       refType: "event",
     });
+    res.json({ message: "Event deleted successfully" });
   },
 };

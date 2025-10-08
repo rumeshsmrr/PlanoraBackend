@@ -17,7 +17,7 @@ const router = Router();
 router.get("/", listDepartments);
 router.post(
   "/",
-  requireAuth,
+
   validate(createDepartmentSchema),
   createDepartment
 );

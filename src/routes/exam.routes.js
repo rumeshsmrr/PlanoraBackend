@@ -9,4 +9,6 @@ const r = Router();
 r.get("/", validate(byRangeQuery), ExamController.list);
 r.post("/", validate(createExamSchema), ExamController.create);
 
+r.get("/seatings", ExamController.getAllSeatings);
+
 export default r;
