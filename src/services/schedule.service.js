@@ -6,37 +6,42 @@ import e from "express";
 /* ---------------------------------------------
    ✅ SQL Helper Functions
 --------------------------------------------- */
-const overlapSql = (table) => `
-  SELECT id, title, venue_id, batch_id, start_utc, end_utc
-  FROM ${table}
-  WHERE venue_id = ?
-    AND start_utc < ?
-    AND end_utc > ?
-`;
-
-const getBatchConflictsSql = (table, isCampusEvent) => {
-  if (isCampusEvent) {
-    // campus event — overlaps with anything
-    return `
-      SELECT id, title, venue_id, batch_id, start_utc, end_utc
-      FROM ${table}
-      WHERE (? < end_utc AND ? > start_utc)
-    `;
-  } // normal batch event
-
-  return `
-    SELECT id, title, venue_id, batch_id, start_utc, end_utc
-    FROM ${table}
-    WHERE (? < end_utc AND ? > start_utc)
-      AND (batch_id = ? OR batch_id IS NULL)
-  `;
+// Located in schedule.service.js
+const overlapSql = (table, itemId = null) => {
+  // Ensure the query starts with a clean SELECT and standard spacing/indentation
+  return `SELECT id, title, venue_id, batch_id, start_utc, end_utc
+FROM ${table}
+WHERE venue_id = ?
+  AND start_utc < ?
+  AND end_utc > ?
+  ${itemId ? `AND id != ${itemId}` : ""}`;
 };
 
-const getAllCampusDayConflictsSql = (table) => `
-  SELECT id, title, venue_id, batch_id, start_utc, end_utc
-  FROM ${table}
-  WHERE (? < end_utc AND ? > start_utc)
-`;
+const getBatchConflictsSql = (table, isCampusEvent, itemId = null) => {
+  const exclusion = itemId ? `AND id != ${itemId}` : "";
+
+  if (isCampusEvent) {
+    // campus event — overlaps with anything
+    return `SELECT id, title, venue_id, batch_id, start_utc, end_utc
+FROM ${table}
+WHERE (? < end_utc AND ? > start_utc)
+  ${exclusion}`; // Apply exclusion here
+  }
+
+  // normal batch event
+  return `SELECT id, title, venue_id, batch_id, start_utc, end_utc
+FROM ${table}
+WHERE (? < end_utc AND ? > start_utc)
+  AND (batch_id = ? OR batch_id IS NULL)
+  ${exclusion}`; // Apply exclusion here
+};
+
+const getAllCampusDayConflictsSql = (table, itemId = null) => {
+  return `SELECT id, title, venue_id, batch_id, start_utc, end_utc
+FROM ${table}
+WHERE (? < end_utc AND ? > start_utc)
+  ${itemId ? `AND id != ${itemId}` : ""}`;
+};
 
 /* ---------------------------------------------
    ✅ Create Event or Exam
@@ -206,16 +211,23 @@ export async function deleteItem(table, id) {
 /* ---------------------------------------------
   🆕 Update Event or Exam
 --------------------------------------------- */
+
 export async function updateItem(table, id, body, userId, res) {
   try {
-    console.log("update Item started for ID:", id);
+    // Ensure the ID is parsed as an integer for comparison
+    const itemId = parseInt(id);
 
+    console.log("update Item started for ID:", itemId);
+
+    // Assume toSqlDateTime, pool, overlapSql, getBatchConflictsSql,
+    // and getAllCampusDayConflictsSql are correctly defined and cleaned.
     const start = toSqlDateTime(body.start);
     const end = toSqlDateTime(body.end);
 
     let campusBatchId = null;
-    let isCampusEvent = false; // ... (Campus/Batch check logic - unchanged) ...
+    let isCampusEvent = false;
 
+    // 🧩 Campus/Batch check logic (unchanged)
     if (body.batchId) {
       const [[batchInfo]] = await pool.query(
         "SELECT id, label FROM batches WHERE id=?",
@@ -235,37 +247,37 @@ export async function updateItem(table, id, body, userId, res) {
       if (deptInfo?.name?.toLowerCase() === "campus") {
         isCampusEvent = true;
       }
-    } /* ---------------------------------------------
-      ✅ 1. Venue Conflicts (Excluding current item)
-    --------------------------------------------- */
+    }
 
-    const [vconfEvents] = await pool.query(overlapSql("events", id), [
+    /* ---------------------------------------------
+      ✅ 1. Venue Conflicts (Excluding current item)
+    --------------------------------------------- */
+    const [vconfEvents] = await pool.query(overlapSql("events", itemId), [
       body.venueId,
       end,
       start,
     ]);
-    const [vconfExams] = await pool.query(overlapSql("exams", id), [
+    const [vconfExams] = await pool.query(overlapSql("exams", itemId), [
       body.venueId,
       end,
       start,
     ]);
     const vconf = [...vconfEvents, ...vconfExams];
-    console.log(
-      "88888888888888 (Venue Check Complete)"
-    ); /* ---------------------------------------------
-      ✅ 2. Batch/Campus Conflicts (Excluding current item)
-    --------------------------------------------- */
+    console.log("88888888888888 (Venue Check Complete)");
 
+    /* ---------------------------------------------
+      ✅ 2. Batch/Campus Conflicts (Excluding current item)
+    --------------------------------------------- */
     let bconf = [];
     if (body.batchId || isCampusEvent) {
       const batchIdForQuery = body.batchId ?? 0;
 
       const [bevents] = await pool.query(
-        getBatchConflictsSql("events", isCampusEvent, id),
+        getBatchConflictsSql("events", isCampusEvent, itemId),
         [start, end, batchIdForQuery]
       );
       const [bexams] = await pool.query(
-        getBatchConflictsSql("exams", isCampusEvent, id),
+        getBatchConflictsSql("exams", isCampusEvent, itemId),
         [start, end, batchIdForQuery]
       );
 
@@ -273,30 +285,26 @@ export async function updateItem(table, id, body, userId, res) {
 
       if (isCampusEvent) {
         const [allEvents] = await pool.query(
-          getAllCampusDayConflictsSql("events", id),
+          getAllCampusDayConflictsSql("events", itemId),
           [start, end]
         );
         const [allExams] = await pool.query(
-          getAllCampusDayConflictsSql("exams", id),
+          getAllCampusDayConflictsSql("exams", itemId),
           [start, end]
         );
         bconf.push(...allEvents, ...allExams);
       }
     }
-    console.log(
-      "9999999999 (Batch Check Complete)"
-    ); /* ---------------------------------------------
-      🔒 Apply Conflict Rules
-    --------------------------------------------- */
+    console.log("9999999999 (Batch Check Complete)");
 
+    /* ---------------------------------------------
+      🔒 Apply Conflict Rules
+    --------------------------------------------- */
     if (vconf.length > 0) {
-      // 🚨 NEW LOG: Check the venue ID before the query that is likely hanging
-      console.log("Checking venue ID for conflict rule:", body.venueId);
-
       const [[venue]] = await pool.query(
         "SELECT allow_conflict FROM venues WHERE id=?",
         [body.venueId]
-      ); // If venue does not exist or does not allow conflicts, return failure
+      );
 
       if (!venue || !venue.allow_conflict) {
         return {
@@ -306,7 +314,6 @@ export async function updateItem(table, id, body, userId, res) {
           conflicts: { venue: vconf, batch: bconf },
         };
       }
-      console.log("Venue conflict resolved (allowed).");
     }
 
     const uniqueBconf = bconf.filter(
@@ -320,21 +327,20 @@ export async function updateItem(table, id, body, userId, res) {
           "Batch conflict detected. Overlapping with the same batch or a Campus-wide schedule.",
         conflicts: { venue: vconf, batch: uniqueBconf },
       };
-    } /* ---------------------------------------------
-      ✅ 3. Update Record
-    --------------------------------------------- */
+    }
 
+    /* ---------------------------------------------
+      ✅ 3. Update Record (FINAL SCHEMA FIX)
+    --------------------------------------------- */
     await pool.query(
       `UPDATE ${table}
-        SET title = ?, 
-            venue_id = ?, 
-            department_id = ?, 
-            batch_id = ?, 
-            start_utc = ?, 
-            end_utc = ?, 
-            updated_by = ?,
-            updated_at = NOW()
-        WHERE id = ?`,
+      SET title = ?, 
+          venue_id = ?, 
+          department_id = ?, 
+          batch_id = ?, 
+          start_utc = ?, 
+          end_utc = ?
+      WHERE id = ?`,
       [
         body.title,
         body.venueId,
@@ -342,8 +348,7 @@ export async function updateItem(table, id, body, userId, res) {
         body.batchId ?? null,
         start,
         end,
-        userId ?? null,
-        id,
+        itemId,
       ]
     );
 

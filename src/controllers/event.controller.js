@@ -4,6 +4,7 @@ import {
   createItem,
   deleteItem,
   listItems,
+  updateItem,
 } from "../services/schedule.service.js";
 import { logAudit } from "../services/audit.service.js";
 
@@ -78,18 +79,12 @@ export const EventController = {
 
   // ✅ Update event
   update: async (req, res) => {
-    const id = req.valid.params.id;
-    const body = req.valid.body;
+    const id = req.params.id;
+    const body = req.body;
 
     try {
       // Call the service function to handle logic and update the database
-      const result = await scheduleService.updateItem(
-        "events",
-        id,
-        body,
-        req.user?.id,
-        res
-      );
+      const result = await updateItem("events", id, body, req.user?.id, res);
 
       if (!result.success) {
         // Handle conflict errors (returned from the service)
