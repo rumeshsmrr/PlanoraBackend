@@ -152,9 +152,8 @@ export async function createItem(table, body, userId, res) {
   --------------------------------------------- */
 
   const [r] = await pool.query(
-    `INSERT INTO ${table} 
-      (title, venue_id, department_id, batch_id, start_utc, end_utc, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ${table} (title, venue_id, department_id, batch_id, start_utc, end_utc, created_by)
+   VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       body.title,
       body.venueId,
