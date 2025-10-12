@@ -12,6 +12,7 @@ export const EventController = {
 
   // ✅ Create new event (with conflict detection + audit)
   create: async (req, res) => {
+    console.log("Creating event with data:", req.valid.body);
     const result = await createItem(
       "events",
       req.valid.body,
@@ -19,6 +20,7 @@ export const EventController = {
       res
     );
     if (!result?.id) return; // blocked due to conflict
+    console.log("Event creation result:", result);
 
     // fetch inserted event + joins
     const [[row]] = await pool.query(
@@ -34,6 +36,7 @@ export const EventController = {
       [result.id]
     );
 
+    console.log("Created event:", row);
     // log creation
     await logAudit({
       title: `Created event "${row.title}"`,
