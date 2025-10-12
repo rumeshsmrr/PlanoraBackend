@@ -8,5 +8,6 @@ const r = Router();
 
 r.get("/", validate(byRangeQuery), EventController.list);
 r.post("/", validate(createEventSchema), EventController.create);
+r.delete("/:id", EventController.delete);
 
 export default r;

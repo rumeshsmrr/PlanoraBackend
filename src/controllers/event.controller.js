@@ -1,6 +1,10 @@
 // 📂 src/controllers/event.controller.js
 import { pool } from "../db.js";
-import { createItem, listItems } from "../services/schedule.service.js";
+import {
+  createItem,
+  deleteItem,
+  listItems,
+} from "../services/schedule.service.js";
 import { logAudit } from "../services/audit.service.js";
 
 export const EventController = {
@@ -72,27 +76,90 @@ export const EventController = {
     });
   },
 
-  // ✅ Update event (future use)
+  // ✅ Update event
   update: async (req, res) => {
-    await logAudit({
-      title: `Updated event "${req.body.title}"`,
-      type: "update",
-      actor: req.user?.name ?? "system",
-      refId: req.valid.params.id,
-      refType: "event",
-    });
-    res.json({ message: "Event update logged" });
+    const id = req.valid.params.id;
+    const body = req.valid.body;
+
+    try {
+      // Call the service function to handle logic and update the database
+      const result = await scheduleService.updateItem(
+        "events",
+        id,
+        body,
+        req.user?.id,
+        res
+      );
+
+      if (!result.success) {
+        // Handle conflict errors (returned from the service)
+        if (result.error.includes("conflict")) {
+          return res.status(409).json({
+            error: result.error,
+            conflicts: result.conflicts,
+          });
+        }
+        // Handle other service errors (e.g., validation, internal)
+        return res.status(400).json({ error: result.error });
+      }
+
+      // Log successful update audit
+      await logAudit({
+        title: `Updated event "${body.title}"`,
+        type: "update",
+        actor: req.user?.name ?? "system",
+        refId: id,
+        refType: "event",
+      });
+
+      // Respond with success
+      res.json({
+        message: "Event updated successfully",
+        id: id,
+        vconflicts: result.vconflicts, // Include conflict info if needed
+        bconflicts: result.bconflicts,
+      });
+    } catch (error) {
+      console.error("Error in eventController.update:", error);
+      res.status(500).json({ error: "Internal server error during update." });
+    }
   },
 
-  // ✅ Delete event (future use)
+  // -----------------------------------------------------------------------
+
+  // ✅ Delete event
   delete: async (req, res) => {
-    await logAudit({
-      title: `Deleted event ID ${req.valid.params.id}`,
-      type: "delete",
-      actor: req.user?.name ?? "system",
-      refId: req.valid.params.id,
-      refType: "event",
-    });
-    res.json({ message: "Event deleted successfully" });
+    const id = req.params.id;
+
+    try {
+      // Call the service function to delete the record
+      const result = await deleteItem("events", id);
+
+      if (!result.success) {
+        // Handle case where item wasn't found
+        if (result.message.includes("not found")) {
+          return res.status(404).json({ error: result.message });
+        }
+        // Handle other deletion errors
+        return res
+          .status(500)
+          .json({ error: result.error || "Failed to delete event." });
+      }
+
+      // Log successful deletion audit
+      await logAudit({
+        title: `Deleted event ID ${id}`,
+        type: "delete",
+        actor: req.user?.name ?? "system",
+        refId: id,
+        refType: "event",
+      });
+
+      // Respond with success
+      res.json({ message: "Event deleted successfully", id: id });
+    } catch (error) {
+      console.error("Error in eventController.delete:", error);
+      res.status(500).json({ error: "Internal server error during deletion." });
+    }
   },
 };
