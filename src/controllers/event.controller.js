@@ -162,4 +162,37 @@ export const EventController = {
       res.status(500).json({ error: "Internal server error during deletion." });
     }
   },
+
+  //get single event by id
+  getEventById: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [[event]] = await pool.query(
+        `SELECT e.id, e.title, 
+              e.start_utc AS start, -- Renamed to 'start'
+              e.end_utc AS end,     -- Renamed to 'end'
+              e.department_id AS departmentId,  -- ADDED: Required for form
+              e.batch_id AS batchId,            -- ADDED: Required for form
+              e.venue_id AS venueId,            -- ADDED: Required for form
+              d.name AS departmentName,
+              b.label AS batchName,
+              v.name AS venueName, v.capacity
+       FROM events e
+       LEFT JOIN departments d ON e.department_id = d.id
+       LEFT JOIN batches b ON e.batch_id = b.id
+       LEFT JOIN venues v ON e.venue_id = v.id
+       WHERE e.id=?`,
+        [id]
+      );
+
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      console.log("Fetched event:", event);
+      res.json(event);
+    } catch (err) {
+      console.error("Error fetching event:", err);
+      res.status(500).json({ error: "Internal server error", err });
+    }
+  },
 };
