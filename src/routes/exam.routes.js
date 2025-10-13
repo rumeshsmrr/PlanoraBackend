@@ -8,6 +8,7 @@ const r = Router();
 
 r.get("/", validate(byRangeQuery), ExamController.list);
 r.post("/", validate(createExamSchema), ExamController.create);
+r.delete("/:id", ExamController.remove);
 
 r.get("/seatings", ExamController.getAllSeatings);
 

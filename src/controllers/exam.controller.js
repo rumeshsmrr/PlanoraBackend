@@ -1,6 +1,10 @@
 // ✅ exam.controller.js
 import { pool } from "../db.js";
-import { createItem, listItems } from "../services/schedule.service.js";
+import {
+  createItem,
+  deleteItem,
+  listItems,
+} from "../services/schedule.service.js";
 import { logAudit } from "../services/audit.service.js";
 import { assignSeatsToStudents } from "../services/seating.service.js";
 
@@ -119,6 +123,41 @@ export const ExamController = {
     } catch (err) {
       console.error("❌ Failed to load all seatings:", err);
       res.status(500).json({ error: "Failed to load exam seatings" });
+    }
+  },
+
+  remove: async (req, res) => {
+    const id = req.params.id;
+    console.log("examController Exam");
+
+    try {
+      const result = await deleteItem("exams", id);
+
+      if (!result.success) {
+        if (result.message.includes("not found")) {
+          return res.status(404).json({ error: result.message });
+        }
+
+        return res
+          .status(500)
+          .json({ error: result.error || "Failed to delete event." });
+      }
+
+      await logAudit({
+        title: `Deleted exam ID ${id}`,
+        type: "delete",
+        actor: req.user?.name ?? "system admin",
+        refId: id,
+        refType: "event",
+      });
+
+      //Respond with sucess
+      res.json({ message: "Exam Deleted Succcessfully" });
+    } catch (err) {
+      console.log("Error in examsController.remove :", err);
+      res
+        .status(500)
+        .json({ errror: "Internal Server Error during deletion." });
     }
   },
 };
