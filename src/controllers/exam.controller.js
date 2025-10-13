@@ -160,4 +160,36 @@ export const ExamController = {
         .json({ errror: "Internal Server Error during deletion." });
     }
   },
+
+  //get single exam by ID
+  getExamByID: async (req, res) => {
+    try {
+      const { id } = req.params;
+      console.log("idddd", id);
+
+      const [[exam]] = await pool.query(
+        `SELECT 
+  e.title, e.venue_id as venueID, e.department_id as departementID, e.start_utc as start,
+  e.end_utc as end, e.batch_id as batchID, b.label as batchName, v.capacity,
+  d.name as departmentName, v.name as venueName
+  FROM exams e
+  LEFT JOIN batches b ON b.id = e.batch_id
+  LEFT JOIN venues v on v.id = e.venue_id 
+  LEFT JOIN departments d on d.id = e.department_id
+  WHERE e.id=?`,
+        [id]
+      );
+
+      if (!exam) {
+        return res.status(404).json({
+          error: "Exam not found",
+        });
+      }
+      console.log("FETCHED EXAM:", exam);
+      res.json(exam);
+    } catch (error) {
+      console.error("Error fetching exam : ", error);
+      res.status(500).json({ error: "Internal server error", error });
+    }
+  },
 };
