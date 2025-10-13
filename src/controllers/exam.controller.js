@@ -4,6 +4,7 @@ import {
   createItem,
   deleteItem,
   listItems,
+  updateItem,
 } from "../services/schedule.service.js";
 import { logAudit } from "../services/audit.service.js";
 import { assignSeatsToStudents } from "../services/seating.service.js";
@@ -190,6 +191,46 @@ export const ExamController = {
     } catch (error) {
       console.error("Error fetching exam : ", error);
       res.status(500).json({ error: "Internal server error", error });
+    }
+  },
+
+  //update
+  update: async (req, res) => {
+    const id = req.params.id;
+    const body = req.body;
+
+    try {
+      //call the service function to handle logic and update the database
+      const result = await updateItem("exams", id, body, req.user?.id, res);
+
+      if (!result.success) {
+        //Handle the confilit error
+        if (result.error.includes("confilict")) {
+          return res.status(409).json({
+            error: result.error,
+            conflicts: result.conflicts,
+          });
+        }
+        return res.status(400).json({ error: result.error });
+      }
+
+      await logAudit({
+        title: `Update exam "${body.title}"`,
+        type: "update",
+        actor: req.user?.name ?? "system admin",
+        refId: id,
+        refType: "exam",
+      });
+
+      res.json({
+        message: "Event update successfully",
+        id: id,
+        vconflicts: result.vconflicts, // Include conflict info if needed
+        bconflicts: result.bconflicts,
+      });
+    } catch (err) {
+      console.error("Error is examController.update :", err);
+      res.status(500).json({ error: "Internal server error during update." });
     }
   },
 };
